@@ -173,7 +173,7 @@ impl ClientSummary {
     }
 
     fn dispute(&mut self, disputed_tx: &Transaction) -> Result<(), EngineError> {
-        // Assumed here that only deposit transactions can be disputed
+        // Assuming here that only deposit transactions can be disputed
         if disputed_tx.tx_type == TransactionType::Deposit {
             if let Some(amount) = disputed_tx.amount {
                 // Ensure idempotence
@@ -233,16 +233,29 @@ impl ClientSummary {
 
     fn charge_back(&mut self, disputed_tx: &Transaction) -> Result<(), EngineError> {
         if !self.locked {
-            // Allowing charge_backs to occur without being disputed to lock account for further
-            // investigation
-            if let Some(amount) = disputed_tx.amount {
-                self.total -= amount;
-                self.held -= amount;
-                self.available = self.total - self.held;
-                self.locked = true;
+            // Only chargeback transactions that where previously disputed.
+            if disputed_tx.disputed {
+                // Can not chargeback transactions that are already resolved.
+                if !disputed_tx.resolved {
+                    if let Some(amount) = disputed_tx.amount {
+                        self.total -= amount;
+                        self.held -= amount;
+                        self.locked = true;
+                    } else {
+                        return Err(EngineError::InvalidTransaction(format!(
+                            "Tx ID: {}",
+                            disputed_tx.tx_id
+                        )));
+                    }
+                } else {
+                    return Err(EngineError::ChargeBackError(format!(
+                        "TX {} is already resolved",
+                        disputed_tx.tx_id
+                    )));
+                }
             } else {
-                return Err(EngineError::InvalidTransaction(format!(
-                    "Tx ID: {}",
+                return Err(EngineError::ChargeBackError(format!(
+                    "TX {} is undisputed",
                     disputed_tx.tx_id
                 )));
             }
