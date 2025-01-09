@@ -42,7 +42,7 @@ async fn process_csv(path: String, state: EngineState) -> Result<(), EngineError
             .entry(transaction.client_id)
             .or_insert(Client::new(transaction.client_id));
 
-        // Print any transaction error and process the remaining transactions.
+        // Print any transaction error to stderr and process the remaining transactions.
         if let Err(e) = match transaction.tx_type {
             TransactionType::Deposit => client.deposit(&transaction),
             TransactionType::Withdrawal => client.withdraw(&transaction),
@@ -50,7 +50,7 @@ async fn process_csv(path: String, state: EngineState) -> Result<(), EngineError
             TransactionType::Resolve => client.resolve(&transaction),
             TransactionType::ChargeBack => client.charge_back(&transaction),
         } {
-            println!("{}", e);
+            eprintln!("{}", e);
         }
     }
 
@@ -103,7 +103,7 @@ pub async fn on_process_csv(
             // binary.
             break;
         } else {
-            println!("Warning: failed to handle csv processing event")
+            eprintln!("Warning: failed to handle csv processing event")
         }
     }
 
@@ -133,7 +133,7 @@ async fn main() -> Result<(), EngineError> {
             .await
             .map_err(|e| EngineError::OtherError(e.to_string()))??;
     } else {
-        println!("This program expects the csv filepath");
+        eprintln!("This program expects the csv filepath");
     }
 
     Ok(())
