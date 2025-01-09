@@ -1,4 +1,4 @@
-use csv::Reader;
+use csv::{Reader, StringRecord};
 use std::collections::HashMap;
 use std::env;
 use std::sync::Arc;
@@ -15,8 +15,19 @@ async fn process_csv(path: String, state: EngineState) -> Result<(), EngineError
 
     let mut client_map = state.client_map.write().await;
 
-    for result in rdr.deserialize() {
-        let record: TransactionRecord = result.map_err(|e| {
+    for result in rdr.records() {
+        let record = result.map_err(|e| {
+            EngineError::InvalidTransaction(format!(
+                "Failed to fetch transaction record. {}",
+                e.to_string()
+            ))
+        })?;
+
+        let trimmed_record: StringRecord = record.into_iter().map(|field| field.trim()).collect();
+
+        // Making sure the entire file is valid.
+        // Stop processing the rest of the records if any record failed to deserialize.
+        let record: TransactionRecord = trimmed_record.deserialize(None).map_err(|e| {
             EngineError::InvalidTransaction(format!(
                 "Failed to deserialize transaction record. {}",
                 e.to_string()
@@ -25,10 +36,12 @@ async fn process_csv(path: String, state: EngineState) -> Result<(), EngineError
 
         let transaction = Transaction::try_from(record)?;
 
+        // Insert a default client if none exists.
         let client = client_map
             .entry(transaction.client_id)
             .or_insert(Client::new(transaction.client_id));
 
+        // Print any transaction error and process the remaining transactions.
         if let Err(e) = match transaction.tx_type {
             TransactionType::Deposit => client.deposit(&transaction),
             TransactionType::Withdrawal => client.withdraw(&transaction),
