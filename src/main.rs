@@ -1,10 +1,11 @@
-use csv::{Reader, StringRecord};
+use csv::{Reader, StringRecord, Writer};
 use std::collections::HashMap;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tx_engine::client::Client;
 use tx_engine::{
+    client::ClientSummary,
     transaction::{Transaction, TransactionRecord, TransactionType},
     AppState, EngineError, EngineState,
 };
@@ -56,6 +57,39 @@ async fn process_csv(path: String, state: EngineState) -> Result<(), EngineError
     Ok(())
 }
 
+pub async fn output_client_summary(state: EngineState) -> Result<(), EngineError> {
+    let client_map = state.client_map.read().await;
+
+    let mut summary_vec: Vec<&ClientSummary> =
+        client_map.values().map(|client| &client.summary).collect();
+
+    summary_vec.sort_by(|a, b| a.get_client_id().partial_cmp(&b.get_client_id()).unwrap());
+
+    println!();
+
+    let mut csv_writer = Writer::from_writer(vec![]);
+
+    for summary in summary_vec {
+        csv_writer.serialize(summary).map_err(|e| {
+            EngineError::OutputError(format!(
+                "Failed to serialize client record: {}",
+                e.to_string()
+            ))
+        })?;
+    }
+
+    let data = String::from_utf8(
+        csv_writer
+            .into_inner()
+            .map_err(|e| EngineError::OutputError(format!("{}", e.to_string())))?,
+    )
+    .map_err(|e| EngineError::OutputError(format!("{}", e.to_string())))?;
+
+    println!("{data}");
+
+    Ok(())
+}
+
 pub async fn on_process_csv(
     mut process_csv_reciever: mpsc::UnboundedReceiver<String>,
     state: EngineState,
@@ -63,12 +97,10 @@ pub async fn on_process_csv(
     loop {
         if let Some(path) = process_csv_reciever.recv().await {
             process_csv(path, state.clone()).await?;
+            output_client_summary(state).await?;
 
-            let client_map = state.client_map.read().await;
-
-            for client in client_map.values() {
-                println!("{}", client);
-            }
+            // Remove this break to handle multiple csv processing events when refactoring this
+            // binary.
             break;
         } else {
             println!("Warning: failed to handle csv processing event")
@@ -89,6 +121,7 @@ async fn main() -> Result<(), EngineError> {
             client_map: RwLock::new(HashMap::new()),
         });
 
+        // Triggering csv processing with "relative" csv filepath received as an argument
         process_csv_sender.send(args[1].clone()).map_err(|e| {
             EngineError::OtherError(format!(
                 "Failed to trigger processing event\n{}",

@@ -17,6 +17,7 @@ pub enum EngineError {
     ResolveError(String),
     ChargeBackError(String),
     CsvFileError(String),
+    OutputError(String),
     OtherError(String),
 }
 
@@ -31,6 +32,7 @@ impl Display for EngineError {
             EngineError::ResolveError(msg) => write!(f, "Resolve Error: {msg}"),
             EngineError::ChargeBackError(msg) => write!(f, "Chargeback Error: {msg}"),
             EngineError::CsvFileError(msg) => write!(f, "CSV Error: {msg}"),
+            EngineError::OutputError(msg) => write!(f, "Output Error: {msg}"),
             EngineError::OtherError(msg) => write!(f, "{msg}"),
         }
     }

@@ -3,13 +3,13 @@ use crate::{
     EngineError,
 };
 
-use serde::Serialize;
+use serde::ser::{Serialize, SerializeStruct};
 use std::{collections::HashMap, fmt::Display};
 
 #[derive(Debug)]
 pub struct Client {
     tx_map: HashMap<u32, Transaction>, // map: tx_id -> transaction
-    summary: ClientSummary,
+    pub summary: ClientSummary,
 }
 
 impl Client {
@@ -93,9 +93,10 @@ impl Display for Client {
     }
 }
 
-#[derive(Debug, Serialize)]
-struct ClientSummary {
+#[derive(Debug)]
+pub struct ClientSummary {
     client_id: u16,
+
     available: f64,
     held: f64,
     total: f64,
@@ -111,6 +112,10 @@ impl ClientSummary {
             total: 0.0,
             locked: false,
         }
+    }
+
+    pub fn get_client_id(&self) -> u16 {
+        self.client_id
     }
 
     fn deposit(&mut self, tx: &Transaction) -> Result<(), EngineError> {
@@ -256,5 +261,21 @@ impl Display for ClientSummary {
             "Client ID: {}, Available: {}, Held: {}, Total: {}, locked: {}",
             self.client_id, self.available, self.held, self.total, self.locked
         )
+    }
+}
+
+impl Serialize for ClientSummary {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        // 5 is the number of fields in the struct.
+        let mut state = serializer.serialize_struct("ClientSummary", 5)?;
+        state.serialize_field("client", &self.client_id)?;
+        state.serialize_field(" available", &format!(" {:.4}", &self.available))?;
+        state.serialize_field(" held", &format!(" {:.4}", &self.held))?;
+        state.serialize_field(" total", &format!(" {:.4}", &self.total))?;
+        state.serialize_field(" locked", &format!(" {}", &self.locked))?;
+        state.end()
     }
 }
