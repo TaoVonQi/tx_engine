@@ -271,6 +271,7 @@ impl ClientSummary {
 
         self.total -= amount;
         self.held -= amount;
+
         self.locked = true;
 
         Ok(())
