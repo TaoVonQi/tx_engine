@@ -65,7 +65,7 @@ pub async fn output_client_summary(state: EngineState) -> Result<(), EngineError
 
     summary_vec.sort_by(|a, b| a.get_client_id().partial_cmp(&b.get_client_id()).unwrap());
 
-    println!();
+    eprintln!();
 
     let mut csv_writer = Writer::from_writer(vec![]);
 
