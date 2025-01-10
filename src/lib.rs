@@ -7,7 +7,7 @@ pub mod transaction;
 
 pub type EngineState = Arc<AppState>;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum EngineError {
     InsufficientFunds,
     InvalidTransaction(String),

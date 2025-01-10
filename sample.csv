@@ -3,4 +3,7 @@ deposit, 1, 1, 2
 dispute,1,1,
 chargeback,1,1,
 deposit, 2, 2, 2
-chargeback,2,2,
+dispute,2,2,
+deposit,5,3,109
+withdrawal,5,2,100
+resolve,2,2,
