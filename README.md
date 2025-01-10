@@ -25,7 +25,5 @@ When a client deposits and withdraws funds before disputing. ie: when the availa
 ### To run this engine with the provided sample data: 
 
 ```
-
 cargo run -- sample.csv > output.csv
-
 ```
