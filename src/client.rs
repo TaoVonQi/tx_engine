@@ -22,24 +22,26 @@ impl Client {
 
     pub fn deposit(&mut self, tx: &Transaction) -> Result<(), EngineError> {
         // Ensure idempotence
-        if !self.tx_map.contains_key(&tx.tx_id) {
-            self.summary.deposit(tx)?;
-            self.tx_map.insert(tx.tx_id, tx.clone());
-            Ok(())
-        } else {
-            Err(EngineError::DuplicateTransaction(format!("{}", tx.tx_id)))
+        if self.tx_map.contains_key(&tx.tx_id) {
+            return Err(EngineError::DuplicateTransaction(format!("{}", tx.tx_id)));
         }
+
+        self.summary.deposit(tx)?;
+        self.tx_map.insert(tx.tx_id, tx.clone());
+
+        Ok(())
     }
 
     pub fn withdraw(&mut self, tx: &Transaction) -> Result<(), EngineError> {
         // Ensure idempotence
-        if !self.tx_map.contains_key(&tx.tx_id) {
-            self.summary.withdraw(tx)?;
-            self.tx_map.insert(tx.tx_id, tx.clone());
-            Ok(())
-        } else {
-            Err(EngineError::DuplicateTransaction(format!("{}", tx.tx_id)))
+        if self.tx_map.contains_key(&tx.tx_id) {
+            return Err(EngineError::DuplicateTransaction(format!("{}", tx.tx_id)));
         }
+
+        self.summary.withdraw(tx)?;
+        self.tx_map.insert(tx.tx_id, tx.clone());
+
+        Ok(())
     }
 
     pub fn dispute(&mut self, tx: &Transaction) -> Result<(), EngineError> {
@@ -96,7 +98,6 @@ impl Display for Client {
 #[derive(Debug)]
 pub struct ClientSummary {
     client_id: u16,
-
     available: f64,
     held: f64,
     total: f64,
@@ -118,150 +119,123 @@ impl ClientSummary {
         self.client_id
     }
 
-    fn deposit(&mut self, tx: &Transaction) -> Result<(), EngineError> {
-        if !self.locked {
-            if let Some(amount) = tx.amount {
-                if amount > 0.0 {
-                    self.available += amount;
-                    self.total += amount;
-                } else {
-                    return Err(EngineError::InvalidTransaction(format!(
-                        "Tx ID: {} invalid amount",
-                        tx.tx_id
-                    )));
-                }
-            } else {
-                return Err(EngineError::InvalidTransaction(format!(
-                    "Tx ID: {}",
-                    tx.tx_id
-                )));
-            }
-        } else {
+    pub fn validate_tx_get_amount(&self, tx: &Transaction) -> Result<f64, EngineError> {
+        if self.locked {
             return Err(EngineError::AccountLocked);
         }
+
+        if tx.amount.is_none() {
+            return Err(EngineError::InvalidTransaction(format!(
+                "Tx ID: {}",
+                tx.tx_id
+            )));
+        }
+
+        let amount = tx.amount.unwrap();
+
+        if amount <= 0.0 {
+            return Err(EngineError::InvalidTransaction(format!(
+                "Tx ID: {} invalid amount",
+                tx.tx_id
+            )));
+        }
+
+        Ok(amount)
+    }
+
+    fn deposit(&mut self, tx: &Transaction) -> Result<(), EngineError> {
+        let amount = self.validate_tx_get_amount(tx)?;
+
+        self.available += amount;
+        self.total += amount;
 
         Ok(())
     }
 
     fn withdraw(&mut self, tx: &Transaction) -> Result<(), EngineError> {
-        if !self.locked {
-            if let Some(amount) = tx.amount {
-                if amount > 0.0 {
-                    if self.available >= amount {
-                        self.available -= amount;
-                        self.total -= amount;
-                    } else {
-                        return Err(EngineError::InsufficientFunds);
-                    }
-                } else {
-                    return Err(EngineError::InvalidTransaction(format!(
-                        "Tx ID: {} invalid amount",
-                        tx.tx_id
-                    )));
-                }
-            } else {
-                return Err(EngineError::InvalidTransaction(format!(
-                    "Tx ID: {}",
-                    tx.tx_id
-                )));
-            }
-        } else {
-            return Err(EngineError::AccountLocked);
+        let amount = self.validate_tx_get_amount(tx)?;
+
+        if self.available < amount {
+            return Err(EngineError::InsufficientFunds);
         }
+
+        self.available -= amount;
+        self.total -= amount;
 
         Ok(())
     }
 
     fn dispute(&mut self, disputed_tx: &Transaction) -> Result<(), EngineError> {
+        let amount = self.validate_tx_get_amount(disputed_tx)?;
+
         // Assuming here that only deposit transactions can be disputed
-        if disputed_tx.tx_type == TransactionType::Deposit {
-            if let Some(amount) = disputed_tx.amount {
-                // Ensure idempotence
-                if !disputed_tx.disputed {
-                    self.available -= amount;
-                    self.held += amount;
-                } else {
-                    return Err(EngineError::DisputeError(format!(
-                        "TX {} is already disputed",
-                        disputed_tx.tx_id
-                    )));
-                }
-            } else {
-                return Err(EngineError::InvalidTransaction(format!(
-                    "Tx ID: {}",
-                    disputed_tx.tx_id
-                )));
-            }
-        } else {
+        if disputed_tx.tx_type != TransactionType::Deposit {
             return Err(EngineError::DisputeError(format!(
                 "Attempt to dispute non deposit tx"
             )));
         }
 
+        // Ensure idempotence
+        if disputed_tx.disputed {
+            return Err(EngineError::DisputeError(format!(
+                "TX {} is already disputed",
+                disputed_tx.tx_id
+            )));
+        }
+
+        self.available -= amount;
+        self.held += amount;
+
         Ok(())
     }
 
     fn resolve(&mut self, disputed_tx: &Transaction) -> Result<(), EngineError> {
-        if let Some(amount) = disputed_tx.amount {
-            // Only resolve transactions that where previously disputed.
-            if disputed_tx.disputed {
-                // Ensure idempotence
-                if !disputed_tx.resolved {
-                    self.available += amount;
-                    self.held -= amount;
-                } else {
-                    return Err(EngineError::ResolveError(format!(
-                        "TX {} is already resolved",
-                        disputed_tx.tx_id
-                    )));
-                }
-            } else {
-                return Err(EngineError::ResolveError(format!(
-                    "TX {} is undisputed",
-                    disputed_tx.tx_id
-                )));
-            }
-        } else {
-            return Err(EngineError::InvalidTransaction(format!(
-                "Tx ID: {}",
+        let amount = self.validate_tx_get_amount(disputed_tx)?;
+
+        // Only resolve transactions that where previously disputed.
+        if !disputed_tx.disputed {
+            return Err(EngineError::ResolveError(format!(
+                "TX {} is undisputed",
                 disputed_tx.tx_id
             )));
         }
+
+        // Ensure idempotence
+        if disputed_tx.resolved {
+            return Err(EngineError::ResolveError(format!(
+                "TX {} is already resolved",
+                disputed_tx.tx_id
+            )));
+        }
+
+        self.available += amount;
+        self.held -= amount;
 
         Ok(())
     }
 
     fn charge_back(&mut self, disputed_tx: &Transaction) -> Result<(), EngineError> {
-        if !self.locked {
-            // Only chargeback transactions that where previously disputed.
-            if disputed_tx.disputed {
-                // Can not chargeback transactions that are already resolved.
-                if !disputed_tx.resolved {
-                    if let Some(amount) = disputed_tx.amount {
-                        self.total -= amount;
-                        self.held -= amount;
-                        self.locked = true;
-                    } else {
-                        return Err(EngineError::InvalidTransaction(format!(
-                            "Tx ID: {}",
-                            disputed_tx.tx_id
-                        )));
-                    }
-                } else {
-                    return Err(EngineError::ChargeBackError(format!(
-                        "TX {} is already resolved",
-                        disputed_tx.tx_id
-                    )));
-                }
-            } else {
-                return Err(EngineError::ChargeBackError(format!(
-                    "TX {} is undisputed",
-                    disputed_tx.tx_id
-                )));
-            }
-        } else {
-            return Err(EngineError::AccountLocked);
+        let amount = self.validate_tx_get_amount(disputed_tx)?;
+
+        // Only chargeback transactions that where previously disputed.
+        if !disputed_tx.disputed {
+            return Err(EngineError::ChargeBackError(format!(
+                "TX {} is undisputed",
+                disputed_tx.tx_id
+            )));
         }
+
+        // Can not chargeback transactions that are already resolved.
+        if disputed_tx.resolved {
+            return Err(EngineError::ChargeBackError(format!(
+                "TX {} is already resolved",
+                disputed_tx.tx_id
+            )));
+        }
+
+        self.total -= amount;
+        self.held -= amount;
+        self.locked = true;
 
         Ok(())
     }
